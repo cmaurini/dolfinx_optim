@@ -64,7 +64,7 @@ def _create_mass_matrix(V2, dx):
     # mass matrix on V2
     one = fem.Function(V2)
     v = ufl.TestFunction(V2)
-    one.vector.set(1.0)
+    one.x.petsc_vec.set(1.0)
     m_ufl = ufl.inner(one, v) * dx
     return fem.assemble_vector(fem.form(m_ufl)).array
 
@@ -130,7 +130,7 @@ class MosekProblem:
         self.c = []
         self.parameters = self._default_parameters()
         self.M = mf.Model(name)
-        # self.vectors_dict = {}
+        # self.x.petsc_vecs_dict = {}
         self.vectors = []
         self.objectives = []
         self.constraints = {}
@@ -151,10 +151,10 @@ class MosekProblem:
     def _create_variable_vector(self, var, name, ux, lx, cone):
         if cone is not None:
             n = cone.dim
-            m = len(var.vector.array) // n
+            m = len(var.x.petsc_vec.array) // n
             domain = mosek_cone_domain(cone)
             if cone.type == "sdp":
-                m = len(var.vector.array) // n**2
+                m = len(var.x.petsc_vec.array) // n**2
                 domain = mf.Domain.inPSDCone(n, m)
                 if name is not None:
                     vec = self.M.variable(name, domain)
@@ -193,11 +193,11 @@ class MosekProblem:
     def _add_boundary_conditions(self, variable, vector, bcs):
         V = variable.function_space
         u_bc = fem.Function(V)
-        u_bc.vector.set(np.inf)
+        u_bc.x.petsc_vec.set(np.inf)
 
-        fem.set_bc(u_bc.vector, to_list(bcs))
-        dof_indices = np.where(u_bc.vector.array < np.inf)[0].astype(np.int32)
-        bc_values = u_bc.vector.array[dof_indices]
+        fem.set_bc(u_bc.x.petsc_vec, to_list(bcs))
+        dof_indices = np.where(u_bc.x.petsc_vec.array < np.inf)[0].astype(np.int32)
+        bc_values = u_bc.x.petsc_vec.array[dof_indices]
 
         self.M.constraint(vector.pick(dof_indices), mf.Domain.equalsTo(bc_values))
 
@@ -436,7 +436,7 @@ class MosekProblem:
             cone = conv_fun.cones[i]
 
             vector = self._create_variable_vector(var, name, ux, lx, cone)
-            assert len(var.vector.array) == vector.getSize()
+            assert len(var.x.petsc_vec.array) == vector.getSize()
             self.variables.append(var)
             self.vectors.append(vector)
 
@@ -516,11 +516,11 @@ class MosekProblem:
             if cons["bu"] is not None:
                 if isinstance(cons["bu"], float):
                     bu = fem.Function(cons["V"])
-                    xbu = bu.vector.array
+                    xbu = bu.x.petsc_vec.array
                     xbu[:] = cons["bu"]
                 elif cons["bu"] == 0:
                     bu = fem.Function(cons["V"])
-                    xbu = bu.vector.array
+                    xbu = bu.x.petsc_vec.array
                 else:
                     bu = fem.assemble_vector(
                         fem.form(ufl.inner(lamb_, cons["bu"]) * conv_fun.dx)
@@ -531,11 +531,11 @@ class MosekProblem:
             if cons["bl"] is not None:
                 if isinstance(cons["bl"], float):
                     bl = fem.Function(cons["V"])
-                    xbl = bl.vector.array
+                    xbl = bl.x.petsc_vec.array
                     xbl[:] = cons["bl"]
                 elif cons["bl"] == 0:
                     bl = fem.Function(cons["V"])
-                    xbl = bl.vector.array
+                    xbl = bl.x.petsc_vec.array
                 else:
                     bl = fem.assemble_vector(
                         fem.form(ufl.inner(lamb_, cons["bl"]) * conv_fun.dx)
@@ -715,7 +715,7 @@ class MosekProblem:
         # Retrieve solution and save to file
         for var, vec in zip(self.variables, self.vectors):
             if isinstance(var, fem.Function):
-                var.vector.array[:] = vec.level()
+                var.x.petsc_vec.array[:] = vec.level()
             else:
                 var.value = vec.level()
 
@@ -735,5 +735,5 @@ class MosekProblem:
         """Retrieves Lagrange multiplier function associated with constraint `name`."""
         constraint, V_cons = self.constraints[name]
         lag = fem.Function(V_cons, name=name)
-        lag.vector.array[:] = constraint.dual()
+        lag.x.petsc_vec.array[:] = constraint.dual()
         return lag
